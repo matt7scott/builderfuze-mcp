@@ -1,0 +1,34 @@
+{
+  "name": "builderfuze-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for BuilderFuze — find collaborators from inside Claude",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:http": "tsx watch src/server-http.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:http": "node dist/server-http.js",
+    "inspect": "npx -y @modelcontextprotocol/inspector tsx src/server.ts",
+    "inspect:http": "npx -y @modelcontextprotocol/inspector http://localhost:3001/mcp"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "builderfuze"
+  ],
+  "author": "BuilderFuze",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.8.0",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
+  }
+}
