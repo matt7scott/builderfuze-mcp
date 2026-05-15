@@ -99,3 +99,80 @@ export async function getBuilder(
   );
   return r.profile;
 }
+
+export interface InboxResponse {
+  counts: {
+    unread_notifications: number;
+    pending_connection_requests: number;
+    unread_messages: number;
+  };
+  pending_in: Array<{
+    id: string;
+    message: string | null;
+    created_at: string;
+    project_context_id: string | null;
+    requester: {
+      id: string;
+      display_name: string;
+      headline: string | null;
+      avatar_url: string | null;
+      looking_for_role: string | null;
+    };
+  }>;
+  pending_out: Array<{
+    id: string;
+    message: string | null;
+    created_at: string;
+    recipient: {
+      id: string;
+      display_name: string;
+      headline: string | null;
+      avatar_url: string | null;
+    };
+  }>;
+  conversations: Array<{
+    id: string;
+    last_message_preview: string | null;
+    last_message_at: string | null;
+    unread: boolean;
+    other: { id: string; display_name: string; avatar_url: string | null };
+  }>;
+}
+
+/**
+ * Fetch the authenticated user's inbox (pending requests + recent conversations).
+ * Requires bearer token.
+ */
+export async function getInbox(bearerToken: string): Promise<InboxResponse> {
+  return bfFetch<InboxResponse>("/api/inbox", { bearerToken });
+}
+
+export interface SendConnectionResponse {
+  connection: {
+    id: string;
+    requester_id: string;
+    recipient_id: string;
+    status: string;
+    created_at: string;
+  };
+}
+
+/**
+ * Send a connection request to a builder. Acts as the authenticated user.
+ * Requires bearer token.
+ */
+export async function sendConnectionRequest(
+  recipientId: string,
+  options: { message?: string; project_context_id?: string } = {},
+  bearerToken: string
+): Promise<SendConnectionResponse> {
+  return bfFetch<SendConnectionResponse>("/api/connections", {
+    method: "POST",
+    body: {
+      recipient_id: recipientId,
+      message: options.message,
+      project_context_id: options.project_context_id ?? null,
+    },
+    bearerToken,
+  });
+}

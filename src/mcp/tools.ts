@@ -6,6 +6,8 @@ import {
 import {
   matchBuilders,
   getBuilder,
+  getInbox,
+  sendConnectionRequest,
   type PublicProfile,
   type MatchResult,
 } from "../builderfuze-client.js";
@@ -80,6 +82,44 @@ const toolDefs = [
       required: ["builder_id"],
     },
   },
+  {
+    name: "send_connection_request",
+    description:
+      "Send a connection request to a builder on BuilderFuze, on behalf of the authenticated user. " +
+      "Use this after the user explicitly indicates they want to reach out to someone (e.g., 'send a request to Sarah'). " +
+      "An optional message is supported but only for Pro-tier users — for free users, the request is sent " +
+      "without a message. If the user wants to attach a project context, pass project_context_id.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        builder_id: {
+          type: "string",
+          description: "The recipient builder's BuilderFuze profile ID (UUID)",
+        },
+        message: {
+          type: "string",
+          description:
+            "Optional personalized message (Pro feature; will be ignored for free users)",
+        },
+        project_context_id: {
+          type: "string",
+          description: "Optional ID of the project this connection is about",
+        },
+      },
+      required: ["builder_id"],
+    },
+  },
+  {
+    name: "get_my_inbox",
+    description:
+      "Return the authenticated user's BuilderFuze inbox: pending incoming/outgoing connection requests, " +
+      "recent conversations with unread state, and unread counts. " +
+      "Use this when the user asks things like 'what's in my inbox', 'any new requests', 'who's waiting on me'.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
 ] as const;
 
 export function registerTools(server: Server, session?: ToolSession) {
@@ -147,6 +187,47 @@ export function registerTools(server: Server, session?: ToolSession) {
           return ok(formatProfileDeep(profile));
         }
 
+        case "send_connection_request": {
+          if (!bfToken) {
+            return errorOut(
+              "You need to be signed in to BuilderFuze (via the Claude connector OAuth flow) to send connection requests."
+            );
+          }
+          const id = String(args?.builder_id ?? "").trim();
+          if (!id) return errorOut("builder_id is required");
+          const message =
+            typeof args?.message === "string" ? args.message.trim() : undefined;
+          const projectCtx =
+            typeof args?.project_context_id === "string"
+              ? args.project_context_id.trim()
+              : undefined;
+          try {
+            const r = await sendConnectionRequest(
+              id,
+              { message: message || undefined, project_context_id: projectCtx },
+              bfToken
+            );
+            return ok(
+              `Connection request sent. The builder will see it in their BuilderFuze inbox.\n\n` +
+                `Request ID: ${r.connection.id}\n` +
+                `Status: ${r.connection.status}`
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Could not send.";
+            return errorOut(msg);
+          }
+        }
+
+        case "get_my_inbox": {
+          if (!bfToken) {
+            return errorOut(
+              "You need to be signed in to BuilderFuze (via the Claude connector OAuth flow) to view your inbox."
+            );
+          }
+          const inbox = await getInbox(bfToken);
+          return ok(formatInbox(inbox));
+        }
+
         default:
           return errorOut(`Unknown tool: ${name}`);
       }
@@ -197,6 +278,76 @@ function formatProfileDeep(p: PublicProfile): string {
     (p.portfolio_url ? `**Portfolio:** ${p.portfolio_url}\n` : "") +
     `\nProfile: https://builderfuze.vercel.app/profile/${p.id}`
   );
+}
+
+import type { InboxResponse } from "../builderfuze-client.js";
+
+function formatInbox(inbox: InboxResponse): string {
+  const c = inbox.counts;
+  const parts: string[] = [];
+
+  parts.push(
+    `📥 Inbox · ${c.pending_connection_requests} pending request(s) · ${c.unread_messages} unread message(s) · ${c.unread_notifications} unread notification(s)`
+  );
+
+  if (inbox.pending_in.length > 0) {
+    parts.push(
+      "\n## Incoming requests\n" +
+        inbox.pending_in
+          .map(
+            (r) =>
+              `• **${r.requester.display_name}** (${r.requester.looking_for_role ?? "—"})\n` +
+              `  ${r.requester.headline ?? ""}\n` +
+              (r.message ? `  Note: "${r.message}"\n` : "") +
+              `  Sent ${timeAgo(r.created_at)} · accept at builderfuze.vercel.app/connections`
+          )
+          .join("\n")
+    );
+  }
+
+  if (inbox.conversations.length > 0) {
+    parts.push(
+      "\n## Recent conversations\n" +
+        inbox.conversations
+          .map(
+            (c) =>
+              `• ${c.unread ? "🔴 " : ""}**${c.other.display_name}**: ${c.last_message_preview ?? "Say hi 👋"}`
+          )
+          .join("\n")
+    );
+  }
+
+  if (inbox.pending_out.length > 0) {
+    parts.push(
+      `\n## Sent requests still pending\n` +
+        inbox.pending_out
+          .map(
+            (r) =>
+              `• ${r.recipient.display_name} · sent ${timeAgo(r.created_at)}`
+          )
+          .join("\n")
+    );
+  }
+
+  if (
+    inbox.pending_in.length === 0 &&
+    inbox.conversations.length === 0 &&
+    inbox.pending_out.length === 0
+  ) {
+    parts.push("\nYour inbox is quiet. Try `find_collaborators` to start reaching out.");
+  }
+
+  return parts.join("\n");
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 function ok(text: string) {
