@@ -9,6 +9,10 @@ import {
   type PublicProfile,
   type MatchResult,
 } from "../builderfuze-client.js";
+import type { AccessTokenClaims } from "../auth/tokens.js";
+
+/** Session is undefined when running stdio (Claude Desktop dev) — anonymous BF calls. */
+export type ToolSession = AccessTokenClaims | undefined;
 
 /**
  * Tool definitions.
@@ -78,7 +82,9 @@ const toolDefs = [
   },
 ] as const;
 
-export function registerTools(server: Server) {
+export function registerTools(server: Server, session?: ToolSession) {
+  const bfToken = session?.bf_access_token;
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: toolDefs.map((t) => ({ ...t })),
   }));
@@ -93,7 +99,7 @@ export function registerTools(server: Server) {
           const limit = Math.min(Number(args?.limit ?? 3), 10);
           if (!desc) return errorOut("description is required");
 
-          const result = await matchBuilders(desc);
+          const result = await matchBuilders(desc, bfToken);
           const top = result.matches.slice(0, limit);
 
           if (top.length === 0) {
@@ -113,7 +119,7 @@ export function registerTools(server: Server) {
           const limit = Math.min(Number(args?.limit ?? 10), 20);
           if (!query) return errorOut("query is required");
 
-          const result = await matchBuilders(query);
+          const result = await matchBuilders(query, bfToken);
           const top = result.matches.slice(0, limit);
 
           if (top.length === 0) {
@@ -137,7 +143,7 @@ export function registerTools(server: Server) {
           const id = String(args?.builder_id ?? "").trim();
           if (!id) return errorOut("builder_id is required");
 
-          const profile = await getBuilder(id);
+          const profile = await getBuilder(id, bfToken);
           return ok(formatProfileDeep(profile));
         }
 
